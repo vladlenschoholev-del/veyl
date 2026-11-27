@@ -1,0 +1,39 @@
+{
+	admin off
+}
+
+(ustoy) {
+	log {
+		output discard
+	}
+
+	encode zstd gzip
+
+	@api path /v1/*
+	handle @api {
+		reverse_proxy relay:8080 {
+			header_up -X-Forwarded-For
+			header_up -X-Real-IP
+			header_up -Forwarded
+		}
+	}
+
+	@health path /health
+	handle @health {
+		reverse_proxy relay:8080
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+{$USTOY_HOSTNAME:localhost} {
+	import ustoy
+}
+
+:80 {
+	import ustoy
+}

@@ -1,0 +1,15 @@
+/target/
+/crypto-core/target/
+/relay-server/target/
+/node_modules/
+/package-lock.json
+/.env
+/.env.*
+!.env.example
+*.ustoy
+*.tsbuildinfo
+*.log
+/crypto-wasm/pkg/
+/client-app/public/crypto-wasm/
+/client-app/node_modules/
+/client-app/dist/

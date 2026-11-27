@@ -1,0 +1,24 @@
+services:
+  relay:
+    build:
+      context: .
+      dockerfile: relay-server/Dockerfile
+    ports:
+      - "${USTOY_RELAY_BIND:-127.0.0.1}:8080:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+  tor:
+    image: peterdavehello/tor-socks-proxy@sha256:0cc12d36d31265ce828c8422a7e163a0bf46755e90531f4c7d38a6149f071729
+    platform: linux/amd64
+    profiles:
+      - tor
+    ports:
+      - "127.0.0.1:9050:9150"
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

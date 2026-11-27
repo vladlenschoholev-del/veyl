@@ -1,0 +1,6 @@
+DataDirectory /var/lib/tor
+SocksPort 0.0.0.0:9050 IsolateSOCKSAuth
+HiddenServiceDir /var/lib/tor/ustoy-hidden
+HiddenServiceVersion 3
+HiddenServicePort 80 proxy:80
+Log warn stdout

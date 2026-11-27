@@ -1,0 +1,91 @@
+name: Verify
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    env:
+      SOURCE_DATE_EPOCH: "1700000000"
+      CARGO_INCREMENTAL: "0"
+      RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential pkg-config libssl-dev
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --version 0.13.1 --locked
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Run Rust tests
+        run: cargo test --workspace --locked
+
+      - name: Build crypto Wasm package
+        run: |
+          wasm-pack build crypto-wasm --target web --out-dir pkg --out-name crypto_wasm
+          mkdir -p client-app/public/crypto-wasm
+          cp crypto-wasm/pkg/crypto_wasm.js crypto-wasm/pkg/crypto_wasm_bg.wasm client-app/public/crypto-wasm/
+
+      - name: Test and build client
+        working-directory: client-app
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Verify reproducible Rust release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo clean --target-dir target/repro-a
+          cargo build --release --locked --target-dir target/repro-a \
+            -p veyl-crypto-core -p veyl-relay-server
+          core_a="$(find target/repro-a/release/deps -maxdepth 1 -type f -name 'libveyl_crypto_core-*.rlib' -print -quit)"
+          test -n "$core_a"
+          core_hash_a="$(sha256sum "$core_a" | cut -d' ' -f1)"
+          relay_hash_a="$(sha256sum target/repro-a/release/veyl-relay-server | cut -d' ' -f1)"
+
+          cargo clean --target-dir target/repro-b
+          cargo build --release --locked --target-dir target/repro-b \
+            -p veyl-crypto-core -p veyl-relay-server
+          core_b="$(find target/repro-b/release/deps -maxdepth 1 -type f -name 'libveyl_crypto_core-*.rlib' -print -quit)"
+          test -n "$core_b"
+          core_hash_b="$(sha256sum "$core_b" | cut -d' ' -f1)"
+          relay_hash_b="$(sha256sum target/repro-b/release/veyl-relay-server | cut -d' ' -f1)"
+
+          printf 'crypto-core SHA-256: %s\nrelay-server SHA-256: %s\n' "$core_hash_a" "$relay_hash_a"
+          test "$core_hash_a" = "$core_hash_b"
+          test "$relay_hash_a" = "$relay_hash_b"
+
+      - name: Build Docker images
+        run: |
+          docker build --file relay-server/Dockerfile --tag veyl-relay:verify .
+          docker build --file docker-reproducible/Dockerfile --tag veyl-reproducible:verify .
+
+      - name: Validate production Compose and Tor image
+        run: |
+          docker compose --file docker-compose.prod.yml config --quiet
+          docker compose --file docker-compose.prod.yml build relay tor
