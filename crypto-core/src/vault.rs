@@ -1,5 +1,4 @@
 use subtle::ConstantTimeEq;
-use zeroize::Zeroizing;
 
 use crate::{
     CryptoError, Result,
