@@ -135,7 +135,11 @@ mod tests {
         let restored = PinKeyWrap::from_bytes(&encoded).unwrap();
 
         assert_eq!(
-            restored.unwrap("correct-horse-42").unwrap().as_ref(),
+            restored
+                .unwrap("correct-horse-42")
+                .unwrap()
+                .unwrap()
+                .as_ref(),
             &data_key
         );
         assert!(restored.unwrap("wrong-pin-42").unwrap().is_none());
