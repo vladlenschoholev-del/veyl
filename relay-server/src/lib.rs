@@ -303,46 +303,52 @@ async fn write_message(State(state): State<AppState>, headers: HeaderMap, body: 
     let mut relay = state.inner.lock().await;
     relay.remove_expired(now);
     let payload_size = packet.encrypted_payload.len();
-    let Some(queue) = relay.queues.get_mut(&packet.queue_id) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    if !bool::from(queue.write_capability[..].ct_eq(&packet.write_capability[..])) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-    if !queue.write_rate.allow(now, WRITE_LIMIT_PER_WINDOW) {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
-    }
-    if let Some(key) = idempotency_key {
-        if let Some(previous) = queue.idempotency.get(&key) {
-            return if bool::from(previous.digest.ct_eq(&digest)) {
-                StatusCode::ACCEPTED.into_response()
-            } else {
-                StatusCode::CONFLICT.into_response()
-            };
+    let idempotency_full = relay.idempotency_entries >= MAX_IDEMPOTENCY_ENTRIES;
+    let stored_bytes = relay.stored_bytes;
+    {
+        let Some(queue) = relay.queues.get_mut(&packet.queue_id) else {
+            return StatusCode::NOT_FOUND.into_response();
+        };
+        if !bool::from(queue.write_capability[..].ct_eq(&packet.write_capability[..])) {
+            return StatusCode::UNAUTHORIZED.into_response();
         }
-        if relay.idempotency_entries >= MAX_IDEMPOTENCY_ENTRIES {
+        if !queue.write_rate.allow(now, WRITE_LIMIT_PER_WINDOW) {
+            return StatusCode::TOO_MANY_REQUESTS.into_response();
+        }
+        if let Some(key) = idempotency_key {
+            if let Some(previous) = queue.idempotency.get(&key) {
+                return if bool::from(previous.digest.ct_eq(&digest)) {
+                    StatusCode::ACCEPTED.into_response()
+                } else {
+                    StatusCode::CONFLICT.into_response()
+                };
+            }
+            if idempotency_full {
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        }
+        if queue.records.len() >= MAX_QUEUE_RECORDS {
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
+        if stored_bytes.saturating_add(payload_size) > MAX_TOTAL_BYTES {
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+        queue.records.push_back(QueueRecord {
+            receipt,
+            encrypted_payload: packet.encrypted_payload,
+            created_at: now,
+        });
+        if let Some(key) = idempotency_key {
+            queue.idempotency.insert(
+                key,
+                IdempotencyEntry {
+                    digest,
+                    created_at: now,
+                },
+            );
+        }
     }
-    if queue.records.len() >= MAX_QUEUE_RECORDS {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
-    }
-    if relay.stored_bytes.saturating_add(payload_size) > MAX_TOTAL_BYTES {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
-    }
-    queue.records.push_back(QueueRecord {
-        receipt,
-        encrypted_payload: packet.encrypted_payload,
-        created_at: now,
-    });
-    if let Some(key) = idempotency_key {
-        queue.idempotency.insert(
-            key,
-            IdempotencyEntry {
-                digest,
-                created_at: now,
-            },
-        );
+    if idempotency_key.is_some() {
         relay.idempotency_entries += 1;
     }
     relay.stored_bytes += payload_size;
