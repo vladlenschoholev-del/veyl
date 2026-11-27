@@ -6,7 +6,11 @@ rust-version = "1.87"
 publish = false
 
 [features]
-wasm = ["getrandom/wasm_js", "dep:getrandom_02"]
+wasm = [
+    "getrandom/wasm_js",
+    "dep:getrandom_02",
+    "dep:getrandom_04",
+]
 
 [dependencies]
 argon2 = "=0.5.3"
@@ -16,6 +20,12 @@ getrandom_02 = {
     package = "getrandom",
     version = "=0.2.17",
     features = ["js"],
+    optional = true,
+}
+getrandom_04 = {
+    package = "getrandom",
+    version = "=0.4.3",
+    features = ["wasm_js"],
     optional = true,
 }
 hkdf = "=0.12.4"
