@@ -6,12 +6,18 @@ rust-version = "1.87"
 publish = false
 
 [features]
-wasm = ["getrandom/wasm_js"]
+wasm = ["getrandom/wasm_js", "dep:getrandom_02"]
 
 [dependencies]
 argon2 = "=0.5.3"
 chacha20poly1305 = { version = "=0.10.1", features = ["std"] }
 getrandom = "=0.3.3"
+getrandom_02 = {
+    package = "getrandom",
+    version = "=0.2.17",
+    features = ["js"],
+    optional = true,
+}
 hkdf = "=0.12.4"
 hmac = "=0.12.1"
 image = { version = "=0.25.8", default-features = false, features = ["jpeg", "png"] }
