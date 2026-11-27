@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn pin_vault_withholds_decoy_until_storage_cleanup_is_confirmed() {
-        let mut profile = WasmProfile::create("primary-pin-42", "duress-pin-42").unwrap();
+        let profile = WasmProfile::create("primary-pin-42", "duress-pin-42").unwrap();
         let real = profile.real_key_wrap();
         let decoy = profile.decoy_key_wrap();
         let mut restored = WasmProfile::from_stored_wraps(&real, &decoy, "NORMAL").unwrap();
