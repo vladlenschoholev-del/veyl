@@ -78,14 +78,20 @@ async fn post(address: SocketAddr, path: &str, body: &[u8]) -> (StatusCode, Vec<
     );
     stream.write_all(request.as_bytes()).await.unwrap();
     stream.write_all(body).await.unwrap();
-    stream.shutdown().await.unwrap();
 
     let mut response = Vec::new();
-    stream.read_to_end(&mut response).await.unwrap();
-    let header_end = response
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .expect("HTTP response header terminator");
+    let mut byte = [0u8; 1];
+    let header_end = loop {
+        assert_ne!(
+            stream.read(&mut byte).await.unwrap(),
+            0,
+            "relay closed before returning an HTTP response for {path}"
+        );
+        response.push(byte[0]);
+        if response.ends_with(b"\r\n\r\n") {
+            break response.len() - 4;
+        }
+    };
     let headers = std::str::from_utf8(&response[..header_end]).unwrap();
     let status_code = headers
         .lines()
@@ -93,10 +99,19 @@ async fn post(address: SocketAddr, path: &str, body: &[u8]) -> (StatusCode, Vec<
         .and_then(|line| line.split_whitespace().nth(1))
         .and_then(|code| code.parse::<u16>().ok())
         .unwrap();
-    (
-        StatusCode::from_u16(status_code).unwrap(),
-        response[header_end + 4..].to_vec(),
-    )
+    let body_length = headers
+        .lines()
+        .skip(1)
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })
+        .unwrap_or(0);
+    let mut response_body = vec![0u8; body_length];
+    stream.read_exact(&mut response_body).await.unwrap();
+    (StatusCode::from_u16(status_code).unwrap(), response_body)
 }
 
 async fn relay_payload(address: SocketAddr, queue: &Queue, encrypted_payload: Vec<u8>) -> Vec<u8> {
